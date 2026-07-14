@@ -1,0 +1,19 @@
+{
+    "tools": [
+        {
+            "name": "infer",
+            "description": "Run a stand-in inference over the prompt. Called by a dependent app only after it has verified this enclave's identity over RA-TLS.",
+            "endpoint": "/infer",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "prompt": {
+                        "type": "string",
+                        "description": "The prompt to process."
+                    }
+                },
+                "required": ["prompt"]
+            }
+        }
+    ]
+}

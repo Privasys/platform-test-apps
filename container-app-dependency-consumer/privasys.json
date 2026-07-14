@@ -1,0 +1,19 @@
+{
+    "tools": [
+        {
+            "name": "ask",
+            "description": "Forward a prompt to the pinned provider dependency, but only after verifying over RA-TLS that the provider's enclave identity is in this app's attested-dependency set.",
+            "endpoint": "/ask",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "prompt": {
+                        "type": "string",
+                        "description": "The prompt to forward to the provider."
+                    }
+                },
+                "required": ["prompt"]
+            }
+        }
+    ]
+}

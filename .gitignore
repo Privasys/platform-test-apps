@@ -1,0 +1,7 @@
+# Go
+*.exe
+/**/consumer
+/**/provider
+# Node / editor
+node_modules/
+.DS_Store
