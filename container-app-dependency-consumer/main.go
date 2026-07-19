@@ -8,10 +8,10 @@
 // then does it call the provider's /infer endpoint.
 //
 // Two independent checks run on the peer:
-//   1. Ordinary RA-TLS verification (challenge-bound quote + report-data), so the
-//      certificate is a genuine, freshly-attested enclave bound to this session.
-//   2. The dependency pin (depcheck): the peer must match the identity pinned for
-//      its app-id. A genuine-but-undeclared enclave is refused.
+//  1. Ordinary RA-TLS verification (challenge-bound quote + report-data), so the
+//     certificate is a genuine, freshly-attested enclave bound to this session.
+//  2. The dependency pin (depcheck): the peer must match the identity pinned for
+//     its app-id. A genuine-but-undeclared enclave is refused.
 package main
 
 import (
@@ -56,19 +56,29 @@ func main() {
 func handleAsk(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Prompt string `json:"prompt"`
+		// ProviderURL lets the caller name the provider at call time (host or
+		// host:port). Falls back to the PROVIDER_URL env var. This keeps the
+		// fixture usable on the container-app deploy path, which does not inject
+		// custom env vars.
+		ProviderURL string `json:"provider_url"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
-	host, portNum, err := providerHostPort()
+	host, portNum, err := providerHostPort(body.ProviderURL)
 	if err != nil {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
 		return
 	}
+	// Egress dependency pin (OID 6.1). Optional: when the runtime injects no
+	// pinned set (PRIVASYS_ATTESTED_DEPENDENCIES unset, e.g. an ingress-only
+	// test), the egress dependency check is skipped so the ingress mutual-RA-TLS
+	// leg (the provider verifying THIS caller) can be exercised on its own.
 	pinned, err := depcheck.LoadPinnedSet()
 	if err != nil {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
 		return
 	}
+	enforceEgress := len(pinned.Entries) > 0
 
 	// Fresh challenge nonce so the provider mints a session-bound quote.
 	nonce := make([]byte, 32)
@@ -105,27 +115,31 @@ func handleAsk(w http.ResponseWriter, r *http.Request) {
 	}
 	leaf := certs[0]
 
-	// (1) Ordinary RA-TLS verification: challenge-bound quote + report-data, plus
-	// the attestation server(s) confirm the raw quote. Fails closed on a relayed
-	// or co-located quote that cannot commit to this TLS session.
-	policy := &ratls.VerificationPolicy{
-		TEE:        ratls.TeeTypeTDX,
-		ReportData: ratls.ReportDataChallengeResponse,
-		Nonce:      nonce,
-	}
-	if _, err := ratls.VerifyRaTlsCertBound(leaf, policy, client.ChannelBinder()); err != nil {
-		writeJSON(w, 502, map[string]any{"error": "provider attestation failed: " + err.Error()})
-		return
+	if enforceEgress {
+		// (1) Ordinary RA-TLS verification: challenge-bound quote + report-data,
+		// plus the attestation server(s) confirm the raw quote. Fails closed on a
+		// relayed or co-located quote that cannot commit to this TLS session.
+		policy := &ratls.VerificationPolicy{
+			TEE:        ratls.TeeTypeTDX,
+			ReportData: ratls.ReportDataChallengeResponse,
+			Nonce:      nonce,
+		}
+		if _, err := ratls.VerifyRaTlsCertBound(leaf, policy, client.ChannelBinder()); err != nil {
+			writeJSON(w, 502, map[string]any{"error": "provider attestation failed: " + err.Error()})
+			return
+		}
+		// (2) The dependency pin: the provider must be a declared dependency of
+		// THIS app and match the pinned identity. Fail closed otherwise.
+		if err := depcheck.VerifyPeer(leaf, ratls.TeeTypeTDX, pinned); err != nil {
+			writeJSON(w, 403, map[string]any{"error": "provider is not a pinned dependency: " + err.Error()})
+			return
+		}
 	}
 
-	// (2) The dependency pin: the provider must be a declared dependency of THIS
-	// app and match the pinned identity. Fail closed otherwise.
-	if err := depcheck.VerifyPeer(leaf, ratls.TeeTypeTDX, pinned); err != nil {
-		writeJSON(w, 403, map[string]any{"error": "provider is not a pinned dependency: " + err.Error()})
-		return
-	}
-
-	// Verified: forward the prompt to the provider.
+	// Forward the prompt to the provider. On the ingress mutual-RA-TLS path the
+	// provider's runtime verifies OUR presented client certificate and either
+	// echoes our attested identity in X-Privasys-Peer-* (which the provider
+	// returns under "caller") or rejects us with 403.
 	reqBody, _ := json.Marshal(map[string]string{"prompt": body.Prompt})
 	resp, err := client.HTTPDo(http.MethodPost, "/infer", host, reqBody, "")
 	if err != nil {
@@ -135,13 +149,20 @@ func handleAsk(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 	var inferOut map[string]any
 	_ = json.NewDecoder(resp.Body).Decode(&inferOut)
-	writeJSON(w, 200, map[string]any{"provider": inferOut, "dependency_verified": true})
+	writeJSON(w, resp.StatusCode, map[string]any{
+		"provider":        inferOut,
+		"provider_status": resp.StatusCode,
+		"egress_verified": enforceEgress,
+	})
 }
 
-func providerHostPort() (string, int, error) {
-	url := os.Getenv("PROVIDER_URL")
+func providerHostPort(override string) (string, int, error) {
+	url := override
 	if url == "" {
-		return "", 0, fmt.Errorf("PROVIDER_URL is required")
+		url = os.Getenv("PROVIDER_URL")
+	}
+	if url == "" {
+		return "", 0, fmt.Errorf("provider_url (body) or PROVIDER_URL (env) is required")
 	}
 	url = strings.TrimPrefix(strings.TrimPrefix(url, "https://"), "http://")
 	host, portStr, found := strings.Cut(url, ":")
