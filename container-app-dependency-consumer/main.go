@@ -156,13 +156,19 @@ func handleAsk(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// defaultProviderURL is used when neither the /ask body nor the env supplies a
+// target. The container-app deploy path injects no custom env and the tool-call
+// schema drops unknown body fields, so the paired provider fixture's stable
+// hostname is baked in as the fallback for the ingress mutual-RA-TLS e2e.
+const defaultProviderURL = "mratls-prov.apps-test.privasys.org"
+
 func providerHostPort(override string) (string, int, error) {
 	url := override
 	if url == "" {
 		url = os.Getenv("PROVIDER_URL")
 	}
 	if url == "" {
-		return "", 0, fmt.Errorf("provider_url (body) or PROVIDER_URL (env) is required")
+		url = defaultProviderURL
 	}
 	url = strings.TrimPrefix(strings.TrimPrefix(url, "https://"), "http://")
 	host, portStr, found := strings.Cut(url, ":")
