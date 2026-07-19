@@ -76,10 +76,22 @@ func handleAsk(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 500, map[string]any{"error": "nonce"})
 		return
 	}
-	client, err := ratls.Connect(host, portNum, &ratls.Options{
+	opts := &ratls.Options{
 		ServerName: host,
 		Challenge:  nonce,
-	})
+	}
+	// Ingress mutual RA-TLS: present this container's attested client identity so
+	// a provider that pins allowed-callers can verify us. The measured manager
+	// mints the cert bound to this session's channel binder. Skipped only if the
+	// manager URL is not injected (then the provider must not require a caller).
+	if mgrURL := os.Getenv("PRIVASYS_MANAGER_URL"); mgrURL != "" {
+		if _, getCert, cerr := ratls.EgressClientCert(mgrURL, os.Getenv("PRIVASYS_CONTAINER_TOKEN")); cerr == nil {
+			opts.GetClientCertificate = getCert
+		} else {
+			log.Printf("egress client identity unavailable: %v", cerr)
+		}
+	}
+	client, err := ratls.Connect(host, portNum, opts)
 	if err != nil {
 		writeJSON(w, 502, map[string]any{"error": "connect provider: " + err.Error()})
 		return

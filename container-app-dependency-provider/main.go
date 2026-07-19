@@ -61,9 +61,23 @@ func main() {
 			Prompt string `json:"prompt"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
+		// Echo the attested-caller identity the runtime injected on the ingress
+		// mutual-RA-TLS path, so the e2e can assert the callee verified the
+		// caller (X-Privasys-Peer-* set only after a successful verification;
+		// the app itself can never forge them — the runtime strips inbound ones).
+		caller := map[string]string{}
+		for _, h := range []string{
+			"X-Privasys-Peer-Verified", "X-Privasys-Peer-App-Id",
+			"X-Privasys-Peer-Image-Digest", "X-Privasys-Peer-Measurement",
+		} {
+			if v := r.Header.Get(h); v != "" {
+				caller[h] = v
+			}
+		}
 		writeJSON(w, 200, map[string]any{
 			"completion": "provider processed: " + strings.TrimSpace(body.Prompt),
 			"version":    appVersion,
+			"caller":     caller,
 		})
 	})
 
