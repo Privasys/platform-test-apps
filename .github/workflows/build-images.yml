@@ -1,0 +1,55 @@
+name: Build container-app images
+
+# Build the container test-fixture images and publish them to GHCR so the
+# platform can pull them by digest for integration/e2e deploys. Each app builds
+# from its own directory (self-contained Dockerfile); the consumer additionally
+# pulls the Privasys/go fork and the public RA-TLS SDK at build time.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "container-app-dependency-provider/**"
+      - "container-app-dependency-consumer/**"
+      - ".github/workflows/build-images.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app:
+          - container-app-dependency-provider
+          - container-app-dependency-consumer
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ${{ matrix.app }}
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./${{ matrix.app }}
+          file: ./${{ matrix.app }}/Dockerfile
+          push: true
+          # Single-arch, no provenance/SBOM so the manifest digest the enclave
+          # pins at OID 65230.3.2 is stable and reproducible.
+          provenance: false
+          sbom: false
+          platforms: linux/amd64
+          tags: |
+            ghcr.io/privasys/${{ matrix.app }}:latest
+            ghcr.io/privasys/${{ matrix.app }}:${{ github.sha }}
+
+      - name: Report digest
+        run: echo "ghcr.io/privasys/${{ matrix.app }}@${{ steps.push.outputs.digest }}"
