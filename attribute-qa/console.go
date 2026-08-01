@@ -25,12 +25,35 @@ import (
 
 type console struct {
 	env     *Env
-	client  *OAuthClient
+	admin   *IdPAdmin
 	apiBase string
 	issuer  string
 
 	mu   sync.Mutex
 	last *consoleResult
+}
+
+// handleClient returns the relying party for one selection, registering it if
+// this is the first time that exact set has been asked for.
+func (c *console) handleClient(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Asked []string `json:"asked"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if len(body.Asked) == 0 {
+		http.Error(w, "pick at least one attribute", http.StatusBadRequest)
+		return
+	}
+	id, err := c.admin.EnsurePublicClient(c.env.Redirect, body.Asked)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"client_id": id})
 }
 
 type consoleResult struct {
@@ -70,30 +93,31 @@ func runServe(args []string) error {
 		return err
 	}
 
-	// One console client, whitelisted for the whole referential: the console
-	// exists to try arbitrary combinations, and the ceiling is exercised by
-	// the headless suite rather than here.
-	all := make([]string, 0, len(env.Ref.Attributes))
-	for _, a := range env.Ref.Attributes {
-		all = append(all, a.Key)
-	}
-	sort.Strings(all)
-	client, err := env.client("console", all)
-	if err != nil {
-		return fmt.Errorf("registering the console relying party: %w", err)
+	if common.idpAdminToken == "" {
+		return fmt.Errorf("serve needs the IdP admin token to register a relying party per selection.\n" +
+			"  Set --idp-admin-token or IDP_ADMIN_TOKEN.\n" +
+			"  Prod: gcloud compute ssh idp-fr-par-1 --project privasys-production --zone europe-west9-a \\\n" +
+			"          --command \"sudo docker exec idp cat /data/admin-token.txt\"")
 	}
 
-	c := &console{env: env, client: client, apiBase: common.endpoint, issuer: common.issuer}
+	c := &console{
+		env:     env,
+		admin:   NewIdPAdmin(common.issuer, common.idpAdminToken),
+		apiBase: common.endpoint,
+		issuer:  common.issuer,
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", c.handleIndex)
+	mux.HandleFunc("/client", c.handleClient)
 	mux.HandleFunc("/report", c.handleReport)
 	mux.HandleFunc("/last.json", c.handleLast)
 
 	fmt.Printf("attribute-qa console on http://localhost:%d\n", *port)
 	fmt.Printf("  control plane : %s\n", common.endpoint)
-	fmt.Printf("  issuer        : %s\n", common.issuer)
-	fmt.Printf("  relying party : %s\n\n", client.ClientID)
+	fmt.Printf("  issuer        : %s\n\n", common.issuer)
 	fmt.Println("Tick attributes, press the button, scan the QR with your wallet.")
+	fmt.Println("Each selection gets its own relying party, whitelisted for exactly")
+	fmt.Println("those attributes — so the wallet offers what you ticked, nothing more.")
 	return http.ListenAndServe(fmt.Sprintf(":%d", *port), mux)
 }
 
@@ -122,11 +146,10 @@ func (c *console) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	indexTmpl.Execute(w, map[string]any{
-		"Rows":     rows,
-		"ClientID": c.client.ClientID,
-		"APIBase":  c.apiBase,
-		"Issuer":   c.issuer,
-		"Last":     last,
+		"Rows":    rows,
+		"APIBase": c.apiBase,
+		"Issuer":  c.issuer,
+		"Last":    last,
 	})
 }
 
@@ -254,7 +277,8 @@ var indexTmpl = template.Must(template.New("index").Parse(`<!doctype html>
   td,th{border-color:#333} code{background:#222} .tag{border-color:#444}}
 </style>
 <h1>Attribute QA</h1>
-<p>Relying party <code>{{.ClientID}}</code>, whitelisted for the whole referential.
+<p>Each selection gets its own relying party, whitelisted for exactly the
+attributes you tick — so the wallet offers those and nothing else.
 Government-backed keys need a wallet holding a real document.</p>
 
 <form id="pick" onsubmit="return start(event)">
@@ -296,12 +320,22 @@ async function start(e) {
   gate.classList.add('on');
   gate.scrollIntoView({behavior: 'smooth', block: 'center'});
   try {
+    // A relying party whitelisted for exactly this selection. The whitelist is
+    // both the ceiling AND, for a request-only key, a form of naming — so a
+    // client allowed everything would make the wallet offer everything.
+    const cres = await fetch('/client', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ asked })
+    });
+    if (!cres.ok) throw new Error(await cres.text());
+    const clientId = (await cres.json()).client_id;
+
     const frame = new Privasys.AuthFrame({
       apiBase: {{.APIBase}},
       authOrigin: {{.Issuer}},
       appName: 'Attribute QA',
       rpId: 'privasys.id',
-      clientId: {{.ClientID}},
+      clientId: clientId,
       scope: document.getElementById('scope').value.trim().split(/\s+/),
       attributes: asked,
       presentation: 'inline',

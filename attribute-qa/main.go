@@ -79,11 +79,12 @@ serve flags:
 }
 
 type commonFlags struct {
-	endpoint string
-	issuer   string
-	token    string
-	identity string
-	prod     bool
+	endpoint      string
+	issuer        string
+	token         string
+	identity      string
+	idpAdminToken string
+	prod          bool
 }
 
 func bindCommon(fs *flag.FlagSet) *commonFlags {
@@ -93,6 +94,11 @@ func bindCommon(fs *flag.FlagSet) *commonFlags {
 	fs.StringVar(&c.issuer, "issuer", defaultIssuer, "IdP issuer")
 	fs.StringVar(&c.token, "token", "", "platform bearer token")
 	fs.StringVar(&c.identity, "identity", defaultIdentityPath(), "software passkey file")
+	// Only `serve` needs this: registering a PUBLIC relying party per
+	// selection is an IdP admin operation, and the management-service always
+	// mints a secret (which a browser flow cannot use).
+	fs.StringVar(&c.idpAdminToken, "idp-admin-token", os.Getenv("IDP_ADMIN_TOKEN"),
+		"IdP admin token (serve only; defaults to $IDP_ADMIN_TOKEN)")
 	return c
 }
 

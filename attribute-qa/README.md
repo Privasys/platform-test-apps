@@ -17,6 +17,15 @@ It needs a platform bearer. By default it borrows the `privasys` CLI's, forcing
 a refresh first (`privasys auth login` if you have none); `--token` or
 `PRIVASYS_TOKEN` override.
 
+`serve` additionally needs the IdP admin token, because it registers a **public**
+relying party per selection (see below) and that is an admin operation:
+
+```bash
+export IDP_ADMIN_TOKEN=$(gcloud compute ssh idp-fr-par-1 \
+  --project privasys-production --zone europe-west9-a \
+  --command "sudo docker exec idp cat /data/admin-token.txt")
+```
+
 ## What it can and cannot automate
 
 Attributes reach the IdP exactly one way: the wallet POSTs them to
@@ -42,8 +51,7 @@ coverage it does not have.
 
 ## The console (`serve`)
 
-Registers one relying party whitelisted for the whole referential, then serves
-a picker on `localhost:8099`. Choose any attributes, approve in the wallet, and
+Serves a picker on `localhost:8099`. Choose any attributes, approve in the wallet, and
 the page reports per key: the assurance the referential claims, whether the
 value arrived as a raw string or an **enclave-signed disclosure**, and the
 achieved `acr` for the set. `GET /last.json` returns the same thing for
@@ -51,6 +59,15 @@ scripting.
 
 Distinguishing the two forms is the point. A relying party that cannot tell a
 typed value from a signed one has no assurance at all.
+
+**One relying party per selection.** The console registers a client whose
+whitelist is exactly what you ticked, keyed on the set so the same selection
+reuses the same client. This is not tidiness — the whitelist is a ceiling AND,
+for a request-only key, a form of naming, so a client allowed everything makes
+the wallet offer everything no matter what the request says. It also registers
+these **public** (no secret): the management-service always mints one, and a
+confidential client cannot complete the SDK's browser PKCE flow, because
+`/token` verifies the secret unconditionally and a browser has none.
 
 ## Design notes
 
