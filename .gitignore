@@ -7,5 +7,5 @@ node_modules/
 .DS_Store
 
 # attribute-qa build output
-attribute-qa
-attribute-qa.exe
+/attribute-qa/attribute-qa
+/attribute-qa/attribute-qa.exe
