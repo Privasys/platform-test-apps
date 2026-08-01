@@ -148,6 +148,21 @@ func (p *PlatformClient) CreateBillingGrant(clientID string, keys []string, maxC
 	return &out, err
 }
 
+// AccountID returns the caller's billing account — who pays for a government
+// disclosure the console asks for.
+func (p *PlatformClient) AccountID() (string, error) {
+	var out struct {
+		AccountID string `json:"account_id"`
+	}
+	if err := p.call(http.MethodGet, "/api/v1/me", nil, &out); err != nil {
+		return "", err
+	}
+	if out.AccountID == "" {
+		return "", fmt.Errorf("no account_id on /me")
+	}
+	return out.AccountID, nil
+}
+
 // Balance reads the caller's credit balance, so a test can assert that a
 // disclosure moved exactly what the quote said it would.
 func (p *PlatformClient) Balance() (int64, error) {

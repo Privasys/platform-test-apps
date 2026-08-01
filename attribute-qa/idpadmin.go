@@ -82,14 +82,52 @@ func (a *IdPAdmin) EnsurePublicClient(redirectURI string, attrs []string) (strin
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+a.Token)
 
+	if err := a.post("/clients", body); err != nil {
+		return "", fmt.Errorf("register %s: %w", clientID, err)
+	}
+	return clientID, nil
+}
+
+// MakeBillable links the client to the account that pays for its disclosures.
+//
+// Without this a government-backed attribute simply never arrives, and it looks
+// like the wallet ignored the request. It doesn't: /authorize only mints a
+// disclosure voucher for a BILLABLE relying party with a billing account, the
+// verifier enclave refuses to issue a government credential without a voucher
+// (REQUIRE_VOUCHER is baked into its measured image), and so the ceremony
+// completes having disclosed nothing. That is the system being correct — no
+// payment, no paid disclosure — but from the console it reads as silence.
+//
+// The consequence is real money: every government disclosure the console asks
+// for is charged to this account at the registry's price.
+func (a *IdPAdmin) MakeBillable(clientID, accountID string) error {
+	body, err := json.Marshal(map[string]any{
+		"billable_rp":        true,
+		"billing_account_id": accountID,
+		"rp_id":              clientID,
+	})
+	if err != nil {
+		return err
+	}
+	return a.post("/clients/"+clientID+"/billing", body)
+}
+
+func (a *IdPAdmin) post(path string, body []byte) error {
+	req, err := http.NewRequest(http.MethodPost, a.Issuer+path, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+a.Token)
+
 	resp, err := a.HTTP.Do(req)
 	if err != nil {
-		return "", err
+		return err
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode >= 400 {
-		return "", fmt.Errorf("register %s: %d: %s", clientID, resp.StatusCode, strings.TrimSpace(string(raw)))
+		return fmt.Errorf("%d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
 	}
-	return clientID, nil
+	return nil
 }

@@ -24,10 +24,11 @@ import (
 )
 
 type console struct {
-	env     *Env
-	admin   *IdPAdmin
-	apiBase string
-	issuer  string
+	env       *Env
+	admin     *IdPAdmin
+	apiBase   string
+	issuer    string
+	accountID string
 
 	mu   sync.Mutex
 	last *consoleResult
@@ -49,6 +50,12 @@ func (c *console) handleClient(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := c.admin.EnsurePublicClient(c.env.Redirect, body.Asked)
 	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	// Only a billable relying party gets disclosure vouchers, and without a
+	// voucher a government-backed attribute never arrives.
+	if err := c.admin.MakeBillable(id, c.accountID); err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -100,11 +107,17 @@ func runServe(args []string) error {
 			"          --command \"sudo docker exec idp cat /data/admin-token.txt\"")
 	}
 
+	accountID, err := env.Platform.AccountID()
+	if err != nil {
+		return fmt.Errorf("resolving the account that pays for disclosures: %w", err)
+	}
+
 	c := &console{
-		env:     env,
-		admin:   NewIdPAdmin(common.issuer, common.idpAdminToken),
-		apiBase: common.endpoint,
-		issuer:  common.issuer,
+		env:       env,
+		admin:     NewIdPAdmin(common.issuer, common.idpAdminToken),
+		apiBase:   common.endpoint,
+		issuer:    common.issuer,
+		accountID: accountID,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", c.handleIndex)
@@ -118,6 +131,8 @@ func runServe(args []string) error {
 	fmt.Println("Tick attributes, press the button, scan the QR with your wallet.")
 	fmt.Println("Each selection gets its own relying party, whitelisted for exactly")
 	fmt.Println("those attributes — so the wallet offers what you ticked, nothing more.")
+	fmt.Printf("\nGovernment-backed disclosures are CHARGED to account %s\n", accountID)
+	fmt.Println("at the registry price (10,000 credits each). Free tiers cost nothing.")
 	return http.ListenAndServe(fmt.Sprintf(":%d", *port), mux)
 }
 
@@ -189,7 +204,29 @@ func (c *console) handleReport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	got := map[string]bool{}
+
+	// A self-asserted attribute arrives as a plain claim on the access token;
+	// only the government tier produces a disclosure. Reading disclosures alone
+	// reported every free attribute as missing.
+	for _, key := range body.Asked {
+		v, ok := res.Raw[key]
+		if !ok {
+			continue
+		}
+		got[key] = true
+		s := fmt.Sprint(v)
+		res.Received = append(res.Received, receivedClaim{
+			Key:       key,
+			Assurance: c.env.Ref.ByKey[key].Assurance,
+			Form:      claimForm(s),
+			Value:     truncate(s, 120),
+		})
+	}
+
 	for _, d := range body.Disclosures {
+		if got[d.Claim] {
+			continue // already reported from the token claim
+		}
 		got[d.Claim] = true
 		// The SD-JWT VC is the evidence, so classify on THAT rather than on
 		// the convenience value the SDK already unwrapped for the caller: a
@@ -341,15 +378,23 @@ async function start(e) {
       presentation: 'inline',
       container: document.getElementById('gate')
     });
-    const out = await frame.connect();
+    // Always a FRESH ceremony. connect() silently restores an existing
+    // session and returns without asking the wallet anything — sensible for
+    // an app, useless for QA: you get a token minted for whatever the LAST
+    // request asked for, so a newly ticked attribute is simply absent and it
+    // looks like the wallet ignored it. clearSession() then signIn() makes
+    // every run a real consent.
+    await frame.clearSession().catch(() => {});
+    const out = await frame.signIn();
     const res = await fetch('/report', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
         asked,
+        // Self-asserted attributes ride the access token; government-backed
+        // ones arrive as disclosures carrying the enclave-signed VC. A QA tool
+        // has to look in both or it reports half the model missing.
         access_token: out.accessToken || '',
-        // The disclosures are the point: each carries the raw SD-JWT VC the
-        // enclave signed, plus the evidence behind it.
-        disclosures: (out.result && out.result.disclosures) || []
+        disclosures: out.disclosures || []
       })
     });
     if (!res.ok) { msg.textContent = 'Report failed: ' + await res.text(); return false; }
