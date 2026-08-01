@@ -20,3 +20,15 @@ dependency fail-closed over RA-TLS:
 
 The consumer's [`depcheck/e2e_test.go`](container-app-dependency-consumer/depcheck/e2e_test.go)
 runs the enforcement end-to-end against a real X.509 certificate (`go test ./depcheck/`).
+
+## Attribute QA
+
+[`attribute-qa`](attribute-qa) — a harness that drives the attribute model
+against a real deployment: whitelist ceilings, request-only keys, the dual
+self-asserted/government tiers, and what a chosen attribute set costs. Runs
+headless with a software passkey (`attribute-qa test`), and serves a browser
+console for the tiers only a real wallet can approve (`attribute-qa serve`).
+
+Unlike its siblings this is not a deployed fixture: a relying party has to
+receive a browser redirect, and `apps.privasys.org` refuses plain HTTPS with
+`sealed-transport-required`. It runs locally against a `localhost` redirect.

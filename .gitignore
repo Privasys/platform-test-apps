@@ -5,3 +5,7 @@
 # Node / editor
 node_modules/
 .DS_Store
+
+# attribute-qa build output
+attribute-qa
+attribute-qa.exe
