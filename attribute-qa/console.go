@@ -243,6 +243,13 @@ var indexTmpl = template.Must(template.New("index").Parse(`<!doctype html>
  .tag{font-size:11px;border:1px solid #ccc;border-radius:99px;padding:0 .4rem;margin-left:.3rem}
  code{background:#f4f4f5;padding:.1rem .3rem;border-radius:3px}
  button{padding:.5rem 1rem;font:inherit}
+ /* The SDK sizes its iframe to this element's bounding box, so the gate is
+    only ever as usable as the box we give it. Sized for the QR ceremony
+    rather than left to collapse to nothing. */
+ #gate{display:none;width:100%;max-width:30rem;height:44rem;margin:1.5rem auto;
+       border:1px solid rgba(128,128,128,.3);border-radius:12px;overflow:hidden}
+ #gate.on{display:block}
+ #msg{margin-left:.75rem;opacity:.8}
  @media(prefers-color-scheme:dark){body{background:#111;color:#eee}
   td,th{border-color:#333} code{background:#222} .tag{border-color:#444}}
 </style>
@@ -282,6 +289,12 @@ async function start(e) {
   if (!asked.length) { msg.textContent = 'Pick at least one attribute.'; return false; }
   msg.textContent = 'Starting — scan the QR with your wallet…';
   document.getElementById('go').disabled = true;
+  // Show and reveal the gate BEFORE connect(): the SDK measures the
+  // container to size its iframe, so a hidden or zero-height box yields a
+  // cramped, scrolling QR.
+  const gate = document.getElementById('gate');
+  gate.classList.add('on');
+  gate.scrollIntoView({behavior: 'smooth', block: 'center'});
   try {
     const frame = new Privasys.AuthFrame({
       apiBase: {{.APIBase}},
@@ -310,6 +323,7 @@ async function start(e) {
   } catch (err) {
     msg.textContent = 'Failed: ' + (err && err.message ? err.message : err);
     document.getElementById('go').disabled = false;
+    gate.classList.remove('on');
   }
   return false;
 }
