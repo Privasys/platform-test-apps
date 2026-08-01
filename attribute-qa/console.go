@@ -323,7 +323,10 @@ attributes you tick — so the wallet offers those and nothing else.
 Government-backed keys need a wallet holding a real document.</p>
 
 <form id="pick" onsubmit="return start(event)">
- <p><label>Scope <input id="scope" value="openid email profile identity" size="40"></label></p>
+ <!-- offline_access keeps the stored session renewable: the step-up hint is
+      the ACCESS token, and without a refresh token it dies after 15 minutes,
+      silently downgrading every later widening to the full ceremony. -->
+ <p><label>Scope <input id="scope" value="openid email profile identity offline_access" size="46"></label></p>
  <p><label><input type="checkbox" id="stable" checked>
     Reuse one relying party across runs (step-up QA: widening a selection
     should push an approval to the wallet instead of showing a QR)</label></p>
