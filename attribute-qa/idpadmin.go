@@ -58,15 +58,26 @@ func NewIdPAdmin(issuer, token string) *IdPAdmin {
 // to the same client and repeated QA runs do not litter the registry. The
 // upsert also means a changed selection rewrites that client's whitelist rather
 // than leaving a stale ceiling behind.
-func (a *IdPAdmin) EnsurePublicClient(redirectURI string, attrs []string) (string, error) {
+//
+// `stable` keeps ONE client id across selections and rewrites its whitelist
+// instead. That is the step-up scenario: the IdP records the granted attribute
+// set per (holder, client), so only a client that persists across runs can
+// present as "the same relying party now asking for more" — the per-selection
+// ids each start with no history and never widen anything.
+func (a *IdPAdmin) EnsurePublicClient(redirectURI string, attrs []string, stable bool) (string, error) {
 	sorted := append([]string(nil), attrs...)
 	sort.Strings(sorted)
 	sum := sha256.Sum256([]byte(strings.Join(sorted, ",")))
 	clientID := "qa-console-" + hex.EncodeToString(sum[:6])
+	clientName := "Attribute QA (" + strings.Join(sorted, ", ") + ")"
+	if stable {
+		clientID = "qa-console-stepup"
+		clientName = "Attribute QA (step-up)"
+	}
 
 	body, err := json.Marshal(map[string]any{
 		"client_id":           clientID,
-		"client_name":         "Attribute QA (" + strings.Join(sorted, ", ") + ")",
+		"client_name":         clientName,
 		"redirect_uris":       []string{redirectURI},
 		"required_attributes": sorted,
 		// No client_secret: a public client, which is what a browser flow needs.

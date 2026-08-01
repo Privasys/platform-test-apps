@@ -39,6 +39,10 @@ type console struct {
 func (c *console) handleClient(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Asked []string `json:"asked"`
+		// Stable reuses one relying party across selections (whitelist
+		// rewritten each run) — the attribute step-up scenario, where a
+		// KNOWN client asks for more than the holder's standing grant.
+		Stable bool `json:"stable"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -48,7 +52,7 @@ func (c *console) handleClient(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "pick at least one attribute", http.StatusBadRequest)
 		return
 	}
-	id, err := c.admin.EnsurePublicClient(c.env.Redirect, body.Asked)
+	id, err := c.admin.EnsurePublicClient(c.env.Redirect, body.Asked, body.Stable)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -320,6 +324,9 @@ Government-backed keys need a wallet holding a real document.</p>
 
 <form id="pick" onsubmit="return start(event)">
  <p><label>Scope <input id="scope" value="openid email profile identity" size="40"></label></p>
+ <p><label><input type="checkbox" id="stable" checked>
+    Reuse one relying party across runs (step-up QA: widening a selection
+    should push an approval to the wallet instead of showing a QR)</label></p>
  <table>
   <tr><th></th><th>Key</th><th>Label</th><th>Assurance</th></tr>
   {{range .Rows}}
@@ -360,9 +367,10 @@ async function start(e) {
     // A relying party whitelisted for exactly this selection. The whitelist is
     // both the ceiling AND, for a request-only key, a form of naming — so a
     // client allowed everything would make the wallet offer everything.
+    const stable = document.getElementById('stable').checked;
     const cres = await fetch('/client', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ asked })
+      body: JSON.stringify({ asked, stable })
     });
     if (!cres.ok) throw new Error(await cres.text());
     const clientId = (await cres.json()).client_id;
@@ -378,14 +386,16 @@ async function start(e) {
       presentation: 'inline',
       container: document.getElementById('gate')
     });
-    // Always a FRESH ceremony. connect() silently restores an existing
-    // session and returns without asking the wallet anything — sensible for
-    // an app, useless for QA: you get a token minted for whatever the LAST
-    // request asked for, so a newly ticked attribute is simply absent and it
-    // looks like the wallet ignored it. clearSession() then signIn() makes
-    // every run a real consent.
-    await frame.clearSession().catch(() => {});
-    const out = await frame.signIn();
+    // connect() is the adopter path, and since the widening fix it is also
+    // the QA path: a session that still covers the selection restores
+    // silently, a WIDENED selection runs the step-up gate (wallet push,
+    // falling back to the full ceremony), and a narrowed one reuses the
+    // session. The old clearSession()+signIn() workaround dates from when
+    // connect() restored a stale session regardless of what was asked.
+    // NB the session store is keyed by rpId (shared privasys.id), so in
+    // fresh-per-selection mode a narrowed selection reuses the PREVIOUS
+    // client's session — use the stable relying party to QA step-up.
+    const out = await frame.connect();
     const res = await fetch('/report', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
@@ -394,7 +404,7 @@ async function start(e) {
         // ones arrive as disclosures carrying the enclave-signed VC. A QA tool
         // has to look in both or it reports half the model missing.
         access_token: out.accessToken || '',
-        disclosures: out.disclosures || []
+        disclosures: (out.result && out.result.disclosures) || []
       })
     });
     if (!res.ok) { msg.textContent = 'Report failed: ' + await res.text(); return false; }
