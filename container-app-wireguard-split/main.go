@@ -9,7 +9,7 @@
 //	POST /configure  the WireGuard settings (owner only, enforced by the platform)
 //	GET|POST /probe  one direct call, one call through the tunnel, and the same
 //	                 private API dialled directly, which must fail
-//	GET  /healthz
+//	GET  /health
 package main
 
 import (
@@ -218,7 +218,11 @@ func main() {
 	// GET for a browser, POST for `privasys apps call <app> probe`.
 	mux.HandleFunc("GET /probe", handleProbe)
 	mux.HandleFunc("POST /probe", handleProbe)
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { io.WriteString(w, "ok") })
+	// The platform's health check calls /health; a failing one restarts the
+	// container, which drops the tunnel until the next configure.
+	ok := func(w http.ResponseWriter, _ *http.Request) { io.WriteString(w, "ok") }
+	mux.HandleFunc("GET /health", ok)
+	mux.HandleFunc("GET /healthz", ok)
 	log.Printf("listening on :%s", port)
 	log.Fatal(http.ListenAndServe(":"+port, mux))
 }
