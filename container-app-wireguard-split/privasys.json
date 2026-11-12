@@ -1,0 +1,41 @@
+{
+    "tools": [
+        {
+            "name": "configure",
+            "role": "config",
+            "title": "WireGuard tunnel to the private API",
+            "endpoint": "/configure",
+            "description": "Bring up the userspace WireGuard tunnel. Only allowed_ip goes through it; every other connection goes out directly.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "private_key": {
+                        "type": "string",
+                        "description": "This app's WireGuard private key (base64).",
+                        "x-privasys": { "secret": true, "label": "Private key" }
+                    },
+                    "peer_public_key": { "type": "string", "description": "The WireGuard server's public key (base64)." },
+                    "preshared_key": {
+                        "type": "string",
+                        "description": "Optional preshared key (base64).",
+                        "x-privasys": { "secret": true, "label": "Preshared key" }
+                    },
+                    "endpoint": { "type": "string", "description": "The WireGuard server, host:port." },
+                    "address": { "type": "string", "description": "This app's tunnel address, e.g. 10.66.66.8." },
+                    "allowed_ip": { "type": "string", "description": "The only prefix sent into the tunnel, e.g. 10.66.66.1/32." },
+                    "dns": { "type": "string", "description": "Optional DNS server reached through the tunnel." },
+                    "private_url": { "type": "string", "description": "The API behind the VPN." },
+                    "direct_url": { "type": "string", "description": "A public URL reached without the VPN." }
+                },
+                "required": ["private_key", "peer_public_key", "endpoint", "address", "allowed_ip", "private_url", "direct_url"]
+            }
+        },
+        {
+            "name": "probe",
+            "description": "One direct call, one call through the tunnel, and the private API dialled directly (which must fail).",
+            "endpoint": "/probe",
+            "method": "GET",
+            "inputSchema": { "type": "object", "properties": {} }
+        }
+    ]
+}

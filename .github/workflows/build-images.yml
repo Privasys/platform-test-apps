@@ -22,6 +22,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
+      # One fixture failing to build must not cancel the others.
+      fail-fast: false
       matrix:
         app:
           - container-app-dependency-provider
@@ -37,10 +39,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Embed privasys.json as the org.privasys.manifest label, as the platform
+      # apps do, so the control plane finds the app's config tool. base64
+      # survives the label parser; the control plane decodes it.
+      - name: Read privasys.json
+        id: manifest
+        run: |
+          if [ -f ${{ matrix.app }}/privasys.json ]; then
+            echo "json=$(jq -c . ${{ matrix.app }}/privasys.json | base64 -w0)" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build and push ${{ matrix.app }}
         id: push
         uses: docker/build-push-action@v6
         with:
+          labels: org.privasys.manifest=${{ steps.manifest.outputs.json }}
           context: ./${{ matrix.app }}
           file: ./${{ matrix.app }}/Dockerfile
           push: true
