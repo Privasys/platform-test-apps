@@ -10,6 +10,7 @@ on:
     paths:
       - "container-app-dependency-provider/**"
       - "container-app-dependency-consumer/**"
+      - "container-app-wireguard-split/**"
       - ".github/workflows/build-images.yml"
   workflow_dispatch:
 
@@ -25,6 +26,7 @@ jobs:
         app:
           - container-app-dependency-provider
           - container-app-dependency-consumer
+          - container-app-wireguard-split
     steps:
       - uses: actions/checkout@v4
 
