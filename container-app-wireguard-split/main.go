@@ -108,8 +108,11 @@ func up(c config) (*tunnel, error) {
 		return nil, err
 	}
 	dev := device.NewDevice(tdev, conn.NewDefaultBind(), device.NewLogger(device.LogLevelError, "wg: "))
+	// Unmap: the resolver can return an IPv4 address in its IPv6-mapped form
+	// (::ffff:a.b.c.d), which wireguard-go then sends from its IPv6 socket, and
+	// the container has no IPv6 route ("sendmmsg: network is unreachable").
 	ipc := fmt.Sprintf("private_key=%s\npublic_key=%s\nendpoint=%s\nallowed_ip=%s\npersistent_keepalive_interval=25\n",
-		priv, pub, net.JoinHostPort(ips[0].String(), port), allowed)
+		priv, pub, net.JoinHostPort(ips[0].Unmap().String(), port), allowed)
 	if c.PresharedKey != "" {
 		psk, err := hexKey(c.PresharedKey)
 		if err != nil {
