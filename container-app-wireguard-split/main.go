@@ -7,7 +7,7 @@
 // tunnel is a dialer that only the private API's HTTP client uses.
 //
 //	POST /configure  the WireGuard settings (owner only, enforced by the platform)
-//	GET  /probe      one direct call, one call through the tunnel, and the same
+//	GET|POST /probe  one direct call, one call through the tunnel, and the same
 //	                 private API dialled directly, which must fail
 //	GET  /healthz
 package main
@@ -215,7 +215,9 @@ func main() {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /configure", handleConfigure)
+	// GET for a browser, POST for `privasys apps call <app> probe`.
 	mux.HandleFunc("GET /probe", handleProbe)
+	mux.HandleFunc("POST /probe", handleProbe)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { io.WriteString(w, "ok") })
 	log.Printf("listening on :%s", port)
 	log.Fatal(http.ListenAndServe(":"+port, mux))

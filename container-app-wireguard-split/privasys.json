@@ -34,7 +34,7 @@
             "name": "probe",
             "description": "One direct call, one call through the tunnel, and the private API dialled directly (which must fail).",
             "endpoint": "/probe",
-            "method": "GET",
+            "method": "POST",
             "inputSchema": { "type": "object", "properties": {} }
         }
     ]
