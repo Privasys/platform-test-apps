@@ -33,6 +33,14 @@
             "x-privasys": {"auth": "owner"}
         },
         {
+            "name": "fee_ping",
+            "title": "Priced ping",
+            "endpoint": "/fee-ping",
+            "description": "A priced call that answers 200, to follow one fee from the runtime to the ledger.",
+            "inputSchema": {"type": "object", "properties": {}},
+            "x-privasys": {"price": {"credits": 1000, "payer": "caller"}}
+        },
+        {
             "name": "trap_count",
             "title": "Redirect trap hits",
             "endpoint": "/trap-count",

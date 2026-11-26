@@ -10,6 +10,7 @@
 //	POST /holder/fdwrite {}        create a file through the kept fd
 //	/.well-known/attestation-extensions  302 to /trap (the runtime must not follow)
 //	GET  /trap-count                    how many times /trap was reached
+//	POST /fee-ping                      a priced call (the runtime charges it)
 package main
 
 import (
@@ -52,6 +53,9 @@ func main() {
 	})
 	mux.HandleFunc("/trap-count", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"trap_hits": trapHits.Load()})
+	})
+	mux.HandleFunc("/fee-ping", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]any{"ok": true})
 	})
 	mux.HandleFunc("/holder/open", holderOpen)
 	mux.HandleFunc("/holder/probe", holderProbe)
