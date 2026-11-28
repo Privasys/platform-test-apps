@@ -11,7 +11,6 @@ on:
       - "container-app-dependency-provider/**"
       - "container-app-dependency-consumer/**"
       - "container-app-wireguard-split/**"
-      - "fixproof-holder/**"
       - ".github/workflows/build-images.yml"
   workflow_dispatch:
 
@@ -30,7 +29,6 @@ jobs:
           - container-app-dependency-provider
           - container-app-dependency-consumer
           - container-app-wireguard-split
-          - fixproof-holder
     steps:
       - uses: actions/checkout@v4
 
