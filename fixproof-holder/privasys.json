@@ -1,0 +1,56 @@
+{
+    "tools": [
+        {
+            "name": "holder_open",
+            "title": "Open the holder folder",
+            "endpoint": "/holder/open",
+            "description": "Ask the runtime to open the holder folder for a subject.",
+            "inputSchema": {"type": "object", "properties": {"subject": {"type": "string"}}, "required": ["subject"]},
+            "x-privasys": {"auth": "owner"}
+        },
+        {
+            "name": "holder_probe",
+            "title": "Probe the holder folder",
+            "endpoint": "/holder/probe",
+            "description": "Try every write and escape a read-only folder must refuse.",
+            "inputSchema": {"type": "object", "properties": {}},
+            "x-privasys": {"auth": "owner"}
+        },
+        {
+            "name": "holder_keepfd",
+            "title": "Keep a directory fd",
+            "endpoint": "/holder/keepfd",
+            "description": "Open a directory fd on the folder and keep it.",
+            "inputSchema": {"type": "object", "properties": {}},
+            "x-privasys": {"auth": "owner"}
+        },
+        {
+            "name": "holder_fdwrite",
+            "title": "Write through the kept fd",
+            "endpoint": "/holder/fdwrite",
+            "description": "Create a file through the kept directory fd.",
+            "inputSchema": {"type": "object", "properties": {}},
+            "x-privasys": {"auth": "owner"}
+        },
+        {
+            "name": "fee_ping",
+            "title": "Priced ping",
+            "endpoint": "/fee-ping",
+            "description": "A priced call that answers 200, to follow one fee from the runtime to the ledger.",
+            "inputSchema": {"type": "object", "properties": {}},
+            "x-privasys": {"price": {"credits": 1000, "payer": "caller"}}
+        },
+        {
+            "name": "trap_count",
+            "title": "Redirect trap hits",
+            "endpoint": "/trap-count",
+            "description": "How many times the redirect target was reached.",
+            "inputSchema": {"type": "object", "properties": {}},
+            "x-privasys": {"auth": "owner"}
+        }
+    ],
+    "resources": [
+        {"kind": "app_storage", "name": "holders", "label": "Fixture folder (read only)",
+         "permissions": ["read"], "options": {"unattended": true}}
+    ]
+}
